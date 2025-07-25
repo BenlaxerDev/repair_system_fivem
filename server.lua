@@ -1,7 +1,6 @@
 local ESX = nil
 local QBCore = nil
 
--- Framework Initialisierung
 if Config.UseFramework then
     if GetResourceState('es_extended') == 'started' then
         ESX = exports['es_extended']:getSharedObject()
@@ -10,16 +9,21 @@ if Config.UseFramework then
     end
 end
 
--- Funktion zum Überprüfen der Spielerwerkzeuge
-local function checkPlayerTools(source)
+local function getRequiredToolsForClass(class)
+    if Config.VehicleClasses and Config.VehicleClasses[class] then
+        return Config.VehicleClasses[class].requiredTools or Config.RequiredTools
+    end
+    return Config.RequiredTools
+end
+
+local function checkPlayerTools(source, class)
     if not Config.UseFramework then return true end
-    
     local hasTools = true
-    
+    local requiredTools = getRequiredToolsForClass(class)
     if ESX then
         local xPlayer = ESX.GetPlayerFromId(source)
-        for _, tool in ipairs(Config.RequiredTools) do
-            local item = xPlayer.getInventoryItem(Config.Framework.ESX.items[tool])
+        for _, tool in ipairs(requiredTools) do
+            local item = xPlayer.getInventoryItem(tool)
             if not item or item.count < 1 then
                 hasTools = false
                 break
@@ -27,41 +31,34 @@ local function checkPlayerTools(source)
         end
     elseif QBCore then
         local Player = QBCore.Functions.GetPlayer(source)
-        for _, tool in ipairs(Config.RequiredTools) do
-            local item = Player.Functions.GetItemByName(Config.Framework.QBCore.items[tool])
+        for _, tool in ipairs(requiredTools) do
+            local item = Player.Functions.GetItemByName(tool)
             if not item or item.amount < 1 then
                 hasTools = false
                 break
             end
         end
     end
-    
     return hasTools
 end
 
--- Event Handler für Reparaturanfragen
 RegisterNetEvent('advanced_repair:requestRepair')
-AddEventHandler('advanced_repair:requestRepair', function(vehicleNetId)
+AddEventHandler('advanced_repair:requestRepair', function(vehicleNetId, vehicleClass)
     local source = source
     local vehicle = NetworkGetEntityFromNetworkId(vehicleNetId)
-    
     if not vehicle then return end
-    
-    -- Überprüfen der Werkzeuge
-    if not checkPlayerTools(source) then
-        TriggerClientEvent('chat:addMessage', source, {
-            color = {255, 0, 0},
-            multiline = true,
-            args = {"System", Config.Notifications.noTools}
+    if not checkPlayerTools(source, vehicleClass) then
+        TriggerClientEvent('ox_lib:notify', source, {
+            type = 'error',
+            description = Config.Notifications and Config.Notifications.noTools or "Du hast nicht alle benötigten Werkzeuge!",
+            position = 'top',
+            duration = 5000
         })
         return
     end
-    
-    -- Reparatur erlauben
     TriggerClientEvent('advanced_repair:startRepair', source, vehicleNetId)
 end)
 
--- Event Handler für Reparaturabschluss
 RegisterNetEvent('advanced_repair:repairComplete')
 AddEventHandler('advanced_repair:repairComplete', function(vehicleNetId)
     local source = source
@@ -69,28 +66,27 @@ AddEventHandler('advanced_repair:repairComplete', function(vehicleNetId)
     
     if not vehicle then return end
     
-    -- Fahrzeug reparieren
     SetVehicleFixed(vehicle)
     SetVehicleDeformationFixed(vehicle)
     SetVehicleUndriveable(vehicle, false)
-    SetVehicleEngineOn(vehicle, true, true)
+    SetVehicleEngineOn(vehicle, true, true, false)
     
-    -- Benachrichtigung
-    TriggerClientEvent('chat:addMessage', source, {
-        color = {0, 255, 0},
-        multiline = true,
-        args = {"System", Config.Notifications.repairComplete}
+    TriggerClientEvent('ox_lib:notify', source, {
+        type = 'success',
+        description = Config.Notifications and Config.Notifications.repairComplete or "Reparatur abgeschlossen!",
+        position = 'top',
+        duration = 5000
     })
 end)
 
--- Debug-Modus
 if Config.Debug then
     RegisterCommand('checktools', function(source, args, rawCommand)
         local hasTools = checkPlayerTools(source)
-        TriggerClientEvent('chat:addMessage', source, {
-            color = {255, 255, 0},
-            multiline = true,
-            args = {"Debug", "Werkzeuge vorhanden: " .. tostring(hasTools)}
+        TriggerClientEvent('ox_lib:notify', source, {
+            type = 'info',
+            description = "Werkzeuge vorhanden: " .. tostring(hasTools),
+            position = 'top',
+            duration = 5000
         })
     end, false)
 end 
